@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>吸光度分布 3D 密度场</title>
+<style>
+  :root {
+    --bg0: #070b14;
+    --bg1: #0d1526;
+    --panel: rgba(17, 25, 44, 0.72);
+    --border: rgba(148, 163, 204, 0.16);
+    --fg: #e8edf7;
+    --muted: #93a1bd;
+    --normal: #3b82f6;
+    --abnormal: #f5b301;
+    --accent: #7dd3fc;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background:
+      radial-gradient(1200px 700px at 85% -10%, rgba(59, 130, 246, 0.16), transparent 60%),
+      radial-gradient(1000px 600px at -10% 110%, rgba(245, 179, 1, 0.10), transparent 55%),
+      linear-gradient(180deg, var(--bg0), var(--bg1));
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 14px 22px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(14px);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .logo {
+    width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--normal), var(--abnormal));
+    box-shadow: 0 4px 18px rgba(59, 130, 246, 0.35);
+    font-size: 16px;
+  }
+  .brand h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: 0.3px; }
+  .brand .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .stats { display: flex; gap: 10px; margin-left: auto; }
+  .stat {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 12px; border-radius: 10px;
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid var(--border);
+    font-size: 12px; color: var(--muted);
+  }
+  .stat b { color: var(--fg); font-weight: 650; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .dot.normal { background: var(--normal); box-shadow: 0 0 10px rgba(59, 130, 246, 0.8); }
+  .dot.abnormal { background: var(--abnormal); box-shadow: 0 0 10px rgba(245, 179, 1, 0.8); }
+  .hint {
+    font-size: 11.5px; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px; padding: 6px 13px;
+    background: rgba(255, 255, 255, 0.035);
+    white-space: nowrap;
+  }
+  #plot { flex: 1; min-height: 0; }
+  .modebar { opacity: 0.9 !important; }
+  .modebar-group { background: rgba(17, 25, 44, 0.55) !important; border-radius: 10px; border: 1px solid var(--border); }
+  .modebar-btn path { fill: var(--muted) !important; }
+  .modebar-btn:hover path { fill: var(--accent) !important; }
+  footer {
+    padding: 7px 22px; font-size: 11px; color: var(--muted);
+    border-top: 1px solid var(--border); background: rgba(7, 11, 20, 0.55);
+    display: flex; justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">◈</div>
+    <div>
+      <h1>吸光度分布 · 3D 密度场</h1>
+      <div class="sub">波长 × 吸光度 × 样本占比</div>
+    </div>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="hint">🖱️ 拖拽旋转 · 滚轮缩放 · 右键平移 · 双击复位</div>
+</header>
+<div id="plot"></div>
+<footer>
+  <span>数据来源: 采谱 CSV(DN/DW/DV/DY 批次)</span>
+  <span>单击图层图例可显示/隐藏对应密度场</span>
+</footer>
+<script id="plotly-inline">__PLOTLY__</script>
+<script>
+const data = __DATA__;
+
+/* 渲染统计徽章 */
+const statsEl = document.getElementById('stats');
+const stat = (cls, text) => `<div class="stat"><i class="dot ${cls}"></i>${text}</div>`;
+statsEl.innerHTML =
+  stat('normal', `正常样本 <b>${data.counts.normal}</b>`) +
+  stat('abnormal', `异常样本 <b>${data.counts.abnormal}</b>`) +
+  stat('', `波长 <b>${data.wavelength[0]}–${data.wavelength[data.wavelength.length - 1]} nm</b>`) +
+  stat('', `网格 <b>${data.wavelength.length}×${data.absorbance.length}</b>`);
+
+const normalScale = [
+  [0.00, 'rgba(13, 40, 102, 0.00)'],
+  [0.20, 'rgba(29, 78, 216, 0.16)'],
+  [0.50, 'rgba(59, 130, 246, 0.46)'],
+  [0.80, 'rgba(125, 211, 252, 0.80)'],
+  [1.00, 'rgba(224, 242, 254, 0.96)'],
+];
+const abnormalScale = [
+  [0.00, 'rgba(90, 60, 0, 0.00)'],
+  [0.20, 'rgba(181, 122, 0, 0.20)'],
+  [0.50, 'rgba(224, 158, 0, 0.50)'],
+  [0.80, 'rgba(250, 204, 21, 0.82)'],
+  [1.00, 'rgba(254, 243, 199, 0.96)'],
+];
+
+const common = {
+  type: 'surface',
+  showscale: true,
+  opacity: 0.92,
+  lighting: { ambient: 0.62, diffuse: 0.72, specular: 0.42, roughness: 0.5 },
+  contours: {
+    z: {
+      show: true, usecolormap: true, project: { z: true },
+      highlightcolor: '#ffffff', highlightwidth: 1.2, width: 1,
+      labelfont: { size: 8 },
+    },
+  },
+  line: { color: 'rgba(255,255,255,0.16)', width: 0.8 },
+};
+
+const traceNormal = {
+  ...common,
+  x: data.wavelength,
+  y: data.absorbance,
+  z: data.normal,
+  name: '正常样本密度场',
+  colorscale: normalScale,
+  colorbar: {
+    title: { text: '正常密度', font: { size: 10, color: '#93a1bd' } },
+    x: 1.00, len: 0.62, thickness: 10,
+    tickfont: { size: 9, color: '#93a1bd' },
+    outlinecolor: 'rgba(148,163,204,0.25)',
+    bgcolor: 'rgba(17,25,44,0.35)',
+  },
+  hovertemplate:
+    '<b>%{x:.0f} nm</b> · %{y:.2f} AU<br>正常占比 %{z:.1%}<extra></extra>',
+};
+
+const traceAbnormal = {
+  ...common,
+  x: data.wavelength,
+  y: data.absorbance,
+  z: data.abnormal,
+  name: '异常样本密度场',
+  colorscale: abnormalScale,
+  colorbar: {
+    title: { text: '异常密度', font: { size: 10, color: '#93a1bd' } },
+    x: 1.10, len: 0.62, thickness: 10,
+    tickfont: { size: 9, color: '#93a1bd' },
+    outlinecolor: 'rgba(148,163,204,0.25)',
+    bgcolor: 'rgba(17,25,44,0.35)',
+  },
+  hovertemplate:
+    '<b>%{x:.0f} nm</b> · %{y:.2f} AU<br>异常占比 %{z:.1%}<extra></extra>',
+};
+
+const layout = {
+  title: {
+    text: '正常(蓝) vs 异常(金) — 各波长处吸光度分布',
+    font: { size: 14, color: '#e8edf7', family: '-apple-system, "PingFang SC", sans-serif' },
+    y: 0.99, x: 0.015, xanchor: 'left', yanchor: 'top',
+  },
+  scene: {
+    bgcolor: 'rgba(0,0,0,0)',
+    xaxis: {
+      title: { text: '波长 / nm', font: { size: 12, color: '#c8d3ea' } },
+      tickfont: { size: 10, color: '#93a1bd' },
+      gridcolor: 'rgba(148,163,204,0.14)',
+      zerolinecolor: 'rgba(148,163,204,0.25)',
+      showspikes: false,
+      nticks: 8,
+    },
+    yaxis: {
+      title: { text: '吸光度 / AU', font: { size: 12, color: '#c8d3ea' } },
+      tickfont: { size: 10, color: '#93a1bd' },
+      gridcolor: 'rgba(148,163,204,0.14)',
+      zerolinecolor: 'rgba(148,163,204,0.25)',
+      showspikes: false,
+    },
+    zaxis: {
+      title: { text: '密度(样本占比)', font: { size: 12, color: '#c8d3ea' } },
+      tickfont: { size: 10, color: '#93a1bd' },
+      gridcolor: 'rgba(148,163,204,0.14)',
+      zerolinecolor: 'rgba(148,163,204,0.25)',
+      showspikes: false,
+    },
+    aspectmode: 'manual',
+    aspectratio: { x: 1.55, y: 1.0, z: 0.72 },
+    camera: { eye: { x: 1.65, y: 1.42, z: 0.78 } },
+  },
+  paper_bgcolor: 'rgba(0,0,0,0)',
+  plot_bgcolor: 'rgba(0,0,0,0)',
+  font: { color: '#e8edf7', family: '-apple-system, "PingFang SC", sans-serif' },
+  margin: { l: 0, r: 118, t: 42, b: 0 },
+  showlegend: true,
+  legend: {
+    x: 0.01, y: 0.015, bgcolor: 'rgba(17,25,44,0.55)',
+    bordercolor: 'rgba(148,163,204,0.2)', borderwidth: 1,
+    font: { size: 12, color: '#e8edf7' },
+    itemwidth: 30,
+  },
+};
+
+Plotly.newPlot('plot', [traceNormal, traceAbnormal], layout, {
+  responsive: true,
+  displaylogo: false,
+  modeBarButtonsToRemove: ['toImage', 'lasso2d', 'select2d'],
+  modeBarButtonsToAdd: ['resetCameraDefault3d'],
+});
+</script>
+</body>
+</html>
