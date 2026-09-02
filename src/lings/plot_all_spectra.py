@@ -23,8 +23,8 @@ ABNORMAL_DIR = ROOT / "data" / "异常数据集"
 
 
 def load_class(folder: Path) -> tuple[list[Path], np.ndarray | None, list[Path]]:
-    """读取文件夹下所有采谱 CSV,返回 (文件列表, 光谱矩阵, 跳过列表)。"""
-    paths = sorted(folder.rglob("采谱*.csv"))
+    """读取文件夹下所有光谱 CSV(兼容「采谱XX-」与「XX原始数据-」命名),返回 (文件列表, 光谱矩阵, 跳过列表)。"""
+    paths = sorted(folder.rglob("*.csv"))
     wavelength: np.ndarray | None = None
     spectra: list[np.ndarray] = []
     skipped: list[Path] = []

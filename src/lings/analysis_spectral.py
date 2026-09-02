@@ -58,7 +58,7 @@ def load_data():
         ("异常", ROOT / "data" / "异常数据集", 1),
     ]:
         for path in sorted(folder.rglob("*.csv")):
-            match = re.search(r"采谱(DN|DW|DV|DY)-", path.name)
+            match = re.search(r"(?:采谱)?(DN|DW|DV|DY)(?:原始数据)?-", path.name)
             batch = match.group(1) if match else "未知"
             try:
                 sample_name, wl, y = read_spectrum(path)
