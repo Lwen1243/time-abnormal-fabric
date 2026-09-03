@@ -348,6 +348,8 @@ def parse_args():
     parser.add_argument("--aug-noise", type=float, default=0.02,
                         help="训练输入高斯噪声强度(默认 0.02)")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--file-filter", default="",
+                        help="只使用文件名含此子串的样本(如 --file-filter 采谱)")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "mps"])
     return parser.parse_args()
@@ -371,7 +373,14 @@ def main():
 
     rows, wavelength, x_full, errors = load_data()
     if errors:
-        raise RuntimeError(f"Failed to parse {len(errors)} input files")
+        print(f"⚠️ {len(errors)} 个文件解析失败(空壳/格式异常),已跳过:", flush=True)
+        for e in errors[:5]:
+            print(f"   - {e['file']}: {e['reason']}", flush=True)
+    if args.file_filter:
+        keep = np.asarray([args.file_filter in r["file"] for r in rows])
+        rows = [r for i, r in enumerate(rows) if keep[i]]
+        x_full = x_full[keep]
+        print(f"按文件名过滤 '{args.file_filter}': 保留 {len(rows)} 条", flush=True)
     x, model_wavelength = build_inputs(x_full, wavelength)
     y = np.asarray([r["label"] for r in rows], dtype=int)
     input_points = x.shape[2]
